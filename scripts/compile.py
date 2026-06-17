@@ -15,8 +15,16 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import sys
 from pathlib import Path
+
+# When run from terminal (outside a Claude Code session), CLAUDE_CONFIG_DIR may not be
+# set. Default to ~/.claude-work so the bundled claude binary finds its auth tokens.
+if "CLAUDE_CONFIG_DIR" not in os.environ:
+    _work_dir = Path.home() / ".claude-work"
+    if _work_dir.exists():
+        os.environ["CLAUDE_CONFIG_DIR"] = str(_work_dir)
 
 from config import AGENTS_FILE, CONCEPTS_DIR, CONNECTIONS_DIR, DAILY_DIR, KNOWLEDGE_DIR, now_iso
 from utils import (

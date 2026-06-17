@@ -15,6 +15,13 @@ from __future__ import annotations
 import os
 os.environ["CLAUDE_INVOKED_BY"] = "memory_flush"
 
+# When run as a background process spawned from a plain shell, CLAUDE_CONFIG_DIR may
+# not be set. Default to ~/.claude-work so the bundled claude binary finds its auth.
+if "CLAUDE_CONFIG_DIR" not in os.environ:
+    _work_dir = __import__("pathlib").Path.home() / ".claude-work"
+    if _work_dir.exists():
+        os.environ["CLAUDE_CONFIG_DIR"] = str(_work_dir)
+
 import asyncio
 import json
 import logging
@@ -222,8 +229,19 @@ def main():
 
     logging.info("Flushing session %s: %d chars", session_id, len(context))
 
-    # Run the LLM extraction
-    response = asyncio.run(run_flush(context))
+    # Run the LLM extraction with retries for transient CLI failures
+    max_attempts = 3
+    response = ""
+    for attempt in range(1, max_attempts + 1):
+        response = asyncio.run(run_flush(context))
+        if "FLUSH_ERROR" not in response:
+            break
+        if attempt < max_attempts:
+            wait = 15 * attempt
+            logging.warning("Attempt %d/%d failed, retrying in %ds", attempt, max_attempts, wait)
+            time.sleep(wait)
+        else:
+            logging.error("All %d attempts failed", max_attempts)
 
     # Append to daily log
     if "FLUSH_OK" in response:
