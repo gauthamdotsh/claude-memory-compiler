@@ -49,6 +49,42 @@ def slugify(text: str) -> str:
     return text.strip("-")
 
 
+# ── Frontmatter helpers ────────────────────────────────────────────────
+
+def parse_frontmatter(path: Path) -> dict:
+    """Parse YAML-lite frontmatter (top-level scalars and inline lists only).
+
+    Skips multi-line block-list continuation lines (e.g. `sources:\n  - "x"`) -
+    good enough for the flat fields (project, updated, filed) callers need.
+    """
+    text = path.read_text(encoding="utf-8")
+    if not text.startswith("---"):
+        return {}
+    end = text.find("\n---", 3)
+    if end == -1:
+        return {}
+
+    result: dict = {}
+    for line in text[3:end].splitlines():
+        if not line.strip() or line[0] in " \t-":
+            continue  # blank or block-list continuation line
+        if ":" not in line:
+            continue
+        key, _, value = line.partition(":")
+        key = key.strip()
+        value = value.strip()
+        if value.startswith("[") and value.endswith("]"):
+            result[key] = [v.strip().strip('"\'') for v in value[1:-1].split(",") if v.strip()]
+        else:
+            result[key] = value.strip('"\'')
+    return result
+
+
+def get_article_project(path: Path) -> str:
+    """Return the `project:` frontmatter field, defaulting to 'global' if absent."""
+    return parse_frontmatter(path).get("project", "global")
+
+
 # ── Wikilink helpers ──────────────────────────────────────────────────
 
 def extract_wikilinks(content: str) -> list[str]:

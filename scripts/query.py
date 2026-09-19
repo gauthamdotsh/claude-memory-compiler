@@ -14,12 +14,38 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import sys
 from pathlib import Path
 
 from config import KNOWLEDGE_DIR, QA_DIR, now_iso
 from utils import load_state, read_all_wiki_content, save_state
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
+
+MAX_CONTEXT_CHARS = 90_000
+
+
+def cap_wiki_content(content: str, budget: int) -> str:
+    """Cap wiki content to budget chars, dropping whole articles from the end."""
+    if len(content) <= budget:
+        return content
+
+    parts = content.split("\n\n---\n\n")
+    kept = [parts[0]]  # always keep the index
+    used = len(parts[0])
+    dropped = 0
+
+    for part in parts[1:]:
+        if used + len(part) + 6 > budget:
+            dropped += 1
+            continue
+        kept.append(part)
+        used += len(part) + 6
+
+    result = "\n\n---\n\n".join(kept)
+    if dropped:
+        result += f"\n\n---\n\n## Note: {dropped} article(s) omitted for context budget"
+    return result
 
 
 async def run_query(question: str, file_back: bool = False) -> str:
@@ -32,7 +58,7 @@ async def run_query(question: str, file_back: bool = False) -> str:
         query,
     )
 
-    wiki_content = read_all_wiki_content()
+    wiki_content = cap_wiki_content(read_all_wiki_content(), MAX_CONTEXT_CHARS)
 
     tools = ["Read", "Glob", "Grep"]
     if file_back:
@@ -91,6 +117,7 @@ consulting the knowledge base below.
                 allowed_tools=tools,
                 permission_mode="acceptEdits",
                 max_turns=15,
+                stderr=lambda line: print(f"[claude-cli stderr] {line}", file=sys.stderr),
             ),
         ):
             if isinstance(message, AssistantMessage):

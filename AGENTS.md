@@ -125,6 +125,7 @@ One article per atomic piece of knowledge. These are facts, patterns, decisions,
 ```markdown
 ---
 title: "Concept Name"
+project: repo-name-or-global
 aliases: [alternate-name, abbreviation]
 tags: [domain, topic]
 sources:
@@ -163,6 +164,7 @@ Cross-cutting synthesis linking 2+ concepts. Created when a conversation reveals
 ```markdown
 ---
 title: "Connection: X and Y"
+project: repo-name-or-global
 connects:
   - "concepts/concept-x"
   - "concepts/concept-y"
@@ -199,6 +201,7 @@ Filed answers from queries. Every complex question answered by the system can be
 ```markdown
 ---
 title: "Q: Original Question"
+project: repo-name-or-global
 question: "The exact question asked"
 consulted:
   - "concepts/article-1"
@@ -275,13 +278,32 @@ Output: a markdown report with severity levels (error, warning, suggestion).
 
 ---
 
+## Session Behavior
+
+How Claude should use this knowledge base during a live Claude Code session (not just when
+running `compile.py`/`query.py`):
+
+1. **Read the index first.** `knowledge/index.md` is injected at session start - it's the
+   full catalog, one line per article.
+2. **Read full articles before answering, if relevant.** SessionStart also injects the full
+   body of every article tagged `project: global` plus every article matching the active
+   project (see `hooks/session-start.py`). If a question touches an article listed in the
+   index but not injected (wrong project, or dropped for budget), read it explicitly with
+   `Read knowledge/concepts/<slug>.md` before answering from memory.
+3. **Save strong answers back.** When a session produces a non-obvious answer, decision, or
+   gotcha worth keeping, file it into `knowledge/qa/` or `knowledge/concepts/` (see "Query"
+   below for the `--file-back` flow) rather than letting it live only in daily log prose.
+
 ## Conventions
 
 - **Wikilinks:** Use Obsidian-style `[[path/to/article]]` without `.md` extension
 - **Writing style:** Encyclopedia-style, factual, third-person where appropriate
 - **Dates:** ISO 8601 (YYYY-MM-DD for dates, full ISO for timestamps in log.md)
 - **File naming:** lowercase, hyphens for spaces (e.g., `supabase-row-level-security.md`)
-- **Frontmatter:** Every article must have YAML frontmatter with at minimum: title, sources, created, updated
+- **Frontmatter:** Every article must have YAML frontmatter with at minimum: title, project, sources, created, updated
+- **Project:** `project:` is the repo/project name (matches the directory name of the git repo the
+  daily log was written in) the article is about, or `global` if it's about the KB/tooling itself.
+  This is what `session-start.py` filters on to inject only relevant articles per project.
 - **Sources:** Always link back to the daily log(s) that contributed to an article
 
 ---
@@ -341,10 +363,16 @@ Commands use simple relative paths from the project root. Empty `matcher` catche
 
 **`session-start.py`** (SessionStart)
 - Pure local I/O, no API calls, runs in under 1 second
-- Reads `knowledge/index.md` and the most recent daily log
+- Reads its stdin payload (`cwd`) to resolve the active project (nearest `.git` ancestor's
+  directory name), then reads `knowledge/index.md`, every article's `project:` frontmatter
+  field, and the most recent daily log
+- Selects every `project: global` article plus every article matching the active project,
+  most-recently-updated first, and injects their **full bodies** (not just index rows) up to
+  a 90,000-character budget - articles that don't fit are named in a dropped-articles note,
+  never silently omitted
 - Outputs JSON to stdout: `{"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "..."}}`
-- Claude sees the knowledge base index at the start of every session
-- Max context: 20,000 characters
+- Claude sees the index, the relevant full articles for the current project, and a short
+  session-behavior reminder (see "Session Behavior" below) at the start of every session
 
 **`session-end.py`** (SessionEnd)
 - Reads hook input from stdin (JSON with `session_id`, `transcript_path`, `cwd`)
@@ -426,9 +454,11 @@ uv run python scripts/compile.py --file daily/2026-04-01.md
 uv run python scripts/compile.py --dry-run
 ```
 
-### query.py - Index-Guided Retrieval
+### query.py - Index-Guided Retrieval (primary way to ask the KB questions)
 
-Loads the entire knowledge base into context (index + all articles). No RAG.
+Loads the entire knowledge base into context (index + all articles). No RAG. This is the
+primary interface for asking the KB a question directly (as opposed to `compile.py`, which
+only runs against daily logs, or relying on whatever SessionStart happened to inject).
 
 At personal KB scale (50-500 articles), the LLM reading a structured index outperforms vector similarity. The LLM understands what you're really asking; cosine similarity just finds similar words.
 

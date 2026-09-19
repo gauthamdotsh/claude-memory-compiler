@@ -103,6 +103,9 @@ Read the daily log above and compile it into wiki articles following the schema 
 2. **Create concept articles** in `knowledge/concepts/` - One .md file per concept
    - Use the exact article format from AGENTS.md (YAML frontmatter + sections)
    - Include `sources:` in frontmatter pointing to the daily log file
+   - Include `project:` in frontmatter - the repo/project this concept is about (infer from
+     the daily log content, e.g. "mms-middleware"), or "global" if the concept is about the
+     knowledge base system or tooling itself rather than any one project
    - Use `[[concepts/slug]]` wikilinks to link to related concepts
    - Write in encyclopedia style - neutral, comprehensive
 3. **Create connection articles** in `knowledge/connections/` if this log reveals non-obvious
